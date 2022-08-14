@@ -11,4 +11,7 @@ var (
 	// Use this error when message had been published, but it is not
 	// available anymore because the expiration time has reached.
 	ErrExpiredID = errors.New("message with id provided is expired")
+
+	ErrNotUnique      = errors.New("message with this id is already exists")
+	ErrInvalidSubject = errors.New("message with subject provided is not valid or never published")
 )

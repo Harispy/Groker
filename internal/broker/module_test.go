@@ -3,7 +3,9 @@ package broker
 import (
 	"context"
 	"github.com/stretchr/testify/assert"
+	"log"
 	"math/rand"
+	"runtime"
 	"sync"
 	"testing"
 	"therealbroker/pkg/broker"
@@ -97,7 +99,6 @@ func TestPublishShouldPreserveOrder(t *testing.T) {
 		messages[i] = createMessage()
 		_, _ = service.Publish(mainCtx, "ali", messages[i])
 	}
-
 	for i := 0; i < n; i++ {
 		msg := <-sub
 		assert.Equal(t, messages[i], msg)
@@ -151,13 +152,14 @@ func TestNewSubscriptionShouldNotGetPreviousMessages(t *testing.T) {
 }
 
 func TestConcurrentSubscribesOnOneSubjectShouldNotFail(t *testing.T) {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(400 * time.Millisecond)
 	defer ticker.Stop()
 	var wg sync.WaitGroup
 
 	for {
 		select {
 		case <-ticker.C:
+			log.Print(runtime.NumGoroutine())
 			wg.Wait()
 			return
 
@@ -174,13 +176,14 @@ func TestConcurrentSubscribesOnOneSubjectShouldNotFail(t *testing.T) {
 }
 
 func TestConcurrentSubscribesShouldNotFail(t *testing.T) {
-	ticker := time.NewTicker(2000 * time.Millisecond)
+	ticker := time.NewTicker(400 * time.Millisecond)
 	defer ticker.Stop()
 	var wg sync.WaitGroup
 
 	for {
 		select {
 		case <-ticker.C:
+			log.Print(runtime.NumGoroutine())
 			wg.Wait()
 			return
 
@@ -206,6 +209,7 @@ func TestConcurrentPublishOnOneSubjectShouldNotFail(t *testing.T) {
 	for {
 		select {
 		case <-ticker.C:
+			log.Print(runtime.NumGoroutine())
 			wg.Wait()
 			return
 
@@ -231,6 +235,7 @@ func TestConcurrentPublishShouldNotFail(t *testing.T) {
 	for {
 		select {
 		case <-ticker.C:
+			log.Print(runtime.NumGoroutine())
 			wg.Wait()
 			return
 

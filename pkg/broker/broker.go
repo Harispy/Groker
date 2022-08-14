@@ -10,7 +10,7 @@ type Message struct {
 	// This parameter is optional. If it's not provided,
 	// the Message can't be accessible through Fetch()
 	// id is unique per every subject
-	id int
+	ID int
 	// Body of the message
 	Body string
 	// The time that message can be accessible through Fetch()
@@ -38,4 +38,12 @@ type Broker interface {
 	// Fetch enables us to retrieve a message that is already published, if
 	// it's not expired yet.
 	Fetch(ctx context.Context, subject string, id int) (Message, error)
+}
+
+// better to create worker pool in db side so the preformance goes up
+type DataBase interface {
+	GetMessageBySubjectAndID(subject string, id int) (Message, error)
+	InsertMessage(subject string, message Message) (int, error)
+	GetSubjects() ([]string, error)
+	// TODO: add other essential methods
 }
