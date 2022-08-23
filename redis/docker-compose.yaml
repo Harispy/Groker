@@ -1,0 +1,8 @@
+version: "2"
+services:
+  cassandra:
+    image: redis
+    ports:
+      - "6379:6379" # remove this if you dont want to use db from host...
+       
+    # environment:

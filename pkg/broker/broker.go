@@ -10,13 +10,15 @@ type Message struct {
 	// This parameter is optional. If it's not provided,
 	// the Message can't be accessible through Fetch()
 	// id is unique per every subject
-	ID int
+	ID int64
 	// Body of the message
 	Body string
 	// The time that message can be accessible through Fetch()
 	// with the proper Message id
 	// 0 when there is no need to keep message ( fire & forget mode )
 	Expiration time.Duration
+	// absolute time of the expiration
+	ExpirationTime time.Time
 }
 
 // The whole implementation should be thread-safe
@@ -27,7 +29,7 @@ type Broker interface {
 	// It should preserve the order. So if we are publishing messages
 	// A, B and C, all subscribers should get these messages as
 	// A, B and C.
-	Publish(ctx context.Context, subject string, msg Message) (int, error)
+	Publish(ctx context.Context, subject string, msg Message) (int64, error)
 
 	// Subscribe listens to every publish, and returns the messages to all
 	// subscribed clients ( channels ).
@@ -37,13 +39,5 @@ type Broker interface {
 
 	// Fetch enables us to retrieve a message that is already published, if
 	// it's not expired yet.
-	Fetch(ctx context.Context, subject string, id int) (Message, error)
-}
-
-// better to create worker pool in db side so the preformance goes up
-type DataBase interface {
-	GetMessageBySubjectAndID(subject string, id int) (Message, error)
-	InsertMessage(subject string, message Message) (int, error)
-	GetSubjects() ([]string, error)
-	// TODO: add other essential methods
+	Fetch(ctx context.Context, subject string, id int64) (*Message, error)
 }

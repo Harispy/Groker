@@ -2,53 +2,63 @@ package broker
 
 import (
 	"context"
-	"log"
 	"sync"
 	"therealbroker/pkg/broker"
 	"therealbroker/pkg/database"
+	"time"
 )
 
 type Module struct {
 	// TODO: Add required fields
 	Closed       bool
+	CloseLock    sync.RWMutex
 	Subjects     map[string][]chan broker.Message
 	SubjectsLock sync.RWMutex
 	// can cache the messages it gets before
-	Database broker.DataBase
+	Database database.MessageRepository
 }
 
-func NewModule() broker.Broker {
-	db := database.NewInMemoryDB() // temp db (persist one should pass into func args)
-	subjects, err := CreateSubjectsMapFromDB(db)
-	if err != nil {
-		log.Fatalf("cannot get the subjects from the database: %s", err)
-	}
+func NewModule(db database.MessageRepository) broker.Broker {
 	return &Module{
 		Closed:   false,
-		Subjects: subjects,
+		Subjects: make(map[string][]chan broker.Message),
 		Database: db,
 	}
 }
 
 func (m *Module) Close() error {
+	m.CloseLock.Lock()
+	defer m.CloseLock.Unlock()
 	if m.Closed {
 		return broker.ErrUnavailable
 	}
+
 	m.Closed = true
+	// closing all open channels
+	for _, channels := range m.Subjects {
+		for _, channel := range channels {
+			close(channel)
+		}
+	}
 	return nil
-	// do some other stuff here (for complete the closing) like send close message in channels
 }
 
-func (m *Module) Publish(ctx context.Context, subject string, msg broker.Message) (int, error) {
+func (m *Module) Publish(ctx context.Context, subject string, msg broker.Message) (int64, error) {
+	m.CloseLock.RLock()
+	defer m.CloseLock.RUnlock()
 	if m.Closed {
 		return 0, broker.ErrUnavailable
 	}
 
-	id, err := m.Database.InsertMessage(subject, msg)
-	if err != nil {
-		return 0, err
+	var id int64 = 0
+	var err error
+	if msg.Expiration != 0 {
+		msg.ExpirationTime = time.Now().Add(msg.Expiration)
+		id, err = m.Database.InsertMessage(subject, &msg)
+		if err != nil {
+			return 0, err
+		}
 	}
-
 	m.SubjectsLock.RLock()
 	defer m.SubjectsLock.RUnlock()
 
@@ -61,38 +71,47 @@ func (m *Module) Publish(ctx context.Context, subject string, msg broker.Message
 }
 
 func (m *Module) Subscribe(ctx context.Context, subject string) (<-chan broker.Message, error) {
+	m.CloseLock.RLock()
+	defer m.CloseLock.RUnlock()
 	if m.Closed {
 		return nil, broker.ErrUnavailable
 	}
+
 	m.SubjectsLock.Lock()
 	defer m.SubjectsLock.Unlock()
 	if _, ok := m.Subjects[subject]; !ok {
 		m.Subjects[subject] = make([]chan broker.Message, 0)
 	}
-	channel := make(chan broker.Message, 100000)
+	channel := make(chan broker.Message, 10000)
 	m.Subjects[subject] = append(m.Subjects[subject], channel)
 	return channel, nil
 }
 
-func (m *Module) Fetch(ctx context.Context, subject string, id int) (broker.Message, error) {
+func (m *Module) Fetch(ctx context.Context, subject string, id int64) (*broker.Message, error) {
+	m.CloseLock.RLock()
+	defer m.CloseLock.RUnlock()
 	if m.Closed {
-		return broker.Message{}, broker.ErrUnavailable
+		return &broker.Message{}, broker.ErrUnavailable
 	}
+
 	message, err := m.Database.GetMessageBySubjectAndID(subject, id)
 	if err != nil {
-		return broker.Message{}, err
+		return &broker.Message{}, err
+	}
+	if time.Now().After(message.ExpirationTime) {
+		return &broker.Message{}, broker.ErrExpiredID
 	}
 	return message, nil
 }
 
-func CreateSubjectsMapFromDB(db broker.DataBase) (map[string][]chan broker.Message, error) {
-	subjs, err := db.GetSubjects()
-	if err != nil {
-		return nil, err
-	}
-	subjects := make(map[string][]chan broker.Message, len(subjs))
-	for _, subj := range subjs {
-		subjects[subj] = make([]chan broker.Message, 0)
-	}
-	return subjects, nil
-}
+//func CreateSubjectsMapFromDB(db database.MessageRepository) (map[string][]chan broker.Message, error) {
+//	subjs, err := db.GetSubjects()
+//	if err != nil {
+//		return nil, err
+//	}
+//	subjects := make(map[string][]chan broker.Message, len(subjs))
+//	for _, subj := range subjs {
+//		subjects[subj] = make([]chan broker.Message, 0)
+//	}
+//	return subjects, nil
+//}
