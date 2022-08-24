@@ -41,7 +41,7 @@ func (db *inMemory) GetMessageBySubjectAndID(subject string, id int64) (*broker.
 	return &message, nil
 }
 
-func (db *inMemory) InsertMessage(subject string, message broker.Message) (int64, error) {
+func (db *inMemory) InsertMessage(subject string, message *broker.Message) (int64, error) {
 	db.allSubjectsLock.RLock()
 	inMemSubject, ok := db.subjects[subject]
 	db.allSubjectsLock.RUnlock()
@@ -59,7 +59,7 @@ func (db *inMemory) InsertMessage(subject string, message broker.Message) (int64
 	if err != nil {
 		return 0, err
 	}
-	inMemSubject.messages[id] = message
+	inMemSubject.messages[id] = *message
 	return id, nil
 }
 

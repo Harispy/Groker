@@ -8,6 +8,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"strconv"
 	grpc_handler "therealbroker/api/proto/handler"
 	proto "therealbroker/api/proto/src"
 	"therealbroker/internal/broker"
@@ -46,8 +48,44 @@ func RunBrokerGrpcServer(port string, m broker2.Broker) {
 	}
 }
 
-func main() { // port haro bayad az enviorment variable gereft baraye dockeri kardan
-	fmt.Println("Hello!")
+func SetDefaultEnvVars() error {
+	if os.Getenv("NODE_ID") == "" {
+		err := os.Setenv("NODE_ID", "1")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("BROKER_DATABASE") == "" {
+		err := os.Setenv("BROKER_DATABASE", "cassandra")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("MESSAGE_ID_GENERATOR") == "" {
+		err := os.Setenv("MESSAGE_ID_GENERATOR", "snowflake")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("BROKER_DATABASE_HOST") == "" {
+		err := os.Setenv("BROKER_DATABASE_HOST", "cassandra")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("REDIS_ID_GENERATOR_HOST") == "" {
+		err := os.Setenv("REDIS_ID_GENERATOR_HOST", "redis")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func main() {
+	// port haro bayad az enviorment variable gereft baraye dockeri kardan
+	// ham chenin host name ha
+	fmt.Println("Hello! v2.0.0")
 
 	// running prometheus server
 	prometheus.MustRegister(grpc_handler.PublishMethodCounter)
@@ -61,57 +99,86 @@ func main() { // port haro bayad az enviorment variable gereft baraye dockeri ka
 
 	//create the database and module and running the broker grpc server
 
-	//db, err := database.NewPostgresDB(
-	//	"postgresql://admin:admin@localhost:5432/broker?sslmode=disable",
-	//	0,
-	//	10000,
-	//	time.Millisecond*100,
-	//)
+	// ENV VARs :
+	// 	BROKER_DATABASE
+	// 	NODE_ID
+	// 	MESSAGE_ID_GENERATOR
+	// 	BROKER_DATABASE_HOST
 
-	idGenerator, err := database.NewSnowFlakeIDGenerator(1) // node id must be unique for each pod
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	//idGenerator, err := database.NewRedisIDGenerator("redis://:@localhost:6379/0")
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-
-	db, err := database.NewCassandraDB(
-		[]string{"localhost:9042"},
-		idGenerator,
-		10000,
-		time.Millisecond*100,
+	var (
+		inodeID     int
+		idGenerator database.MessageIDGenerator
+		err         error
+		db          database.MessageRepository
 	)
+
+	// set default ENV VARs :
+	err = SetDefaultEnvVars()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("error while setting default value for env variables")
 	}
 
+	switch os.Getenv("NODE_ID") {
+	default:
+		inodeID, err = strconv.Atoi(os.Getenv("NODE_ID"))
+		if err != nil {
+			log.Fatal("node id should be integer")
+		}
+		log.Println("node id set to:", os.Getenv("NODE_ID"))
+	}
+
+	// create message id generator
+	err = nil
+	switch os.Getenv("MESSAGE_ID_GENERATOR") {
+	case "snowflake":
+		idGenerator, err = database.NewSnowFlakeIDGenerator(int64(inodeID)) // node id must be unique for each pod
+	case "redis":
+		idGenerator, err = database.NewRedisIDGenerator(
+			fmt.Sprintf("redis://:@%s:6379/0", os.Getenv("REDIS_ID_GENERATOR_HOST")),
+		)
+	default:
+		log.Fatal("invalid id generator!")
+	}
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Printf("%s ID Generator created\n", os.Getenv("MESSAGE_ID_GENERATOR"))
+	}
+
+	// create broker database
+	err = nil
+	switch os.Getenv("BROKER_DATABASE") {
+
+	case "cassandra":
+		db, err = database.NewCassandraDB(
+			[]string{fmt.Sprintf("%s:9042", os.Getenv("BROKER_DATABASE_HOST"))},
+			idGenerator,
+			10000,
+			time.Millisecond*100,
+		)
+
+	case "postgres":
+		db, err = database.NewPostgresDB(
+			fmt.Sprintf("postgres://admin:admin@%s:5432/broker?sslmode=disable", os.Getenv("BROKER_DATABASE_HOST")),
+			0,
+			10000,
+			time.Millisecond*100,
+		)
+
+	case "inMemory":
+		db = database.NewInMemoryDB()
+
+	default:
+		log.Fatal("invalid broker database")
+	}
+	if err != nil {
+		log.Fatal(err)
+	} else {
+		log.Printf("%s database created successfully\n", os.Getenv("BROKER_DATABASE"))
+	}
+
+	// create the broker module
 	m := broker.NewModule(db)
 	RunBrokerGrpcServer("8080", m)
 
-	//
-	//
-	//
-	//
-	//
-	//}
-	//go func() {
-	//	id, err := db.InsertMessage("test", broker2.Message{Body: "texttttttttt", ExpirationTime: time.Now()})
-	//	if err != nil {
-	//		log.Println(err)
-	//	}
-	//	log.Println("id", id)
-	//}()
-	//time.Sleep(time.Second)
-	//db.SendBatch()
-	//time.Sleep(time.Second * 10)
-
-	//msg, err := db.GetMessageBySubjectAndID("test", id)
-	//if err != nil {
-	//	log.Println(err)
-	//}
-	//println(msg.Body, msg.ID, msg.ExpirationTime.Format("2006/01/02 15:04"))
-	//fmt.Println(time.Now().Format("2006/01/02 15:04"))
 }

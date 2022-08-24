@@ -27,15 +27,26 @@ type cassandra struct {
 }
 
 // can have a pool for batch inserting...
-// make the input and output messages pointer to avoide copy data
+// make the input and output messages pointer to avoid copy data
 // (actually impress performance (about 6%) and memory usage )
 
 func NewCassandraDB(hosts []string, idGenerator MessageIDGenerator, batchSize int, batchInsertTimeLimit time.Duration) (*cassandra, error) {
 	cluster := gocql.NewCluster(hosts...)
 	//cluster.Keyspace = "broker"
 	cluster.Consistency = gocql.Quorum
-	//cluster.ProtoVersion = 4
-	session, err := cluster.CreateSession()
+	cluster.ProtoVersion = 4
+	cluster.ConnectTimeout = time.Second * 10
+	var (
+		session *gocql.Session
+		err     error
+	)
+	for i := 1; i < 20; i++ {
+		session, err = cluster.CreateSession()
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second * time.Duration(i))
+	}
 	if err != nil {
 		return nil, err
 	}
