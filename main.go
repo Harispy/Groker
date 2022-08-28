@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 	"log"
 	"net"
 	"net/http"
@@ -16,6 +13,9 @@ import (
 	broker2 "therealbroker/pkg/broker"
 	"therealbroker/pkg/database"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 // Main requirements:
@@ -24,7 +24,7 @@ import (
 // 3. Basic prometheus metrics ( latency, throughput, etc. ) should be implemented
 // 	  for every base functionality ( publish, subscribe etc. )
 
-func RunPromtheusServer(port string) {
+func RunPrometheusServer(port string) {
 	http.Handle("/metrics", promhttp.Handler())
 	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), nil); err != nil {
 		log.Fatalf("promtheus server faild to serve on port %s, error : %v", port, err)
@@ -68,13 +68,25 @@ func SetDefaultEnvVars() error {
 		}
 	}
 	if os.Getenv("BROKER_DATABASE_HOST") == "" {
-		err := os.Setenv("BROKER_DATABASE_HOST", "cassandra")
+		err := os.Setenv("BROKER_DATABASE_HOST", "localhost")
 		if err != nil {
 			return err
 		}
 	}
 	if os.Getenv("REDIS_ID_GENERATOR_HOST") == "" {
-		err := os.Setenv("REDIS_ID_GENERATOR_HOST", "redis")
+		err := os.Setenv("REDIS_ID_GENERATOR_HOST", "localhost")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("DATABASE_BATCH_SIZE") == "" {
+		err := os.Setenv("DATABASE_BATCH_SIZE", "10000")
+		if err != nil {
+			return err
+		}
+	}
+	if os.Getenv("DATABASE_BATCH_TIME_LIMIT") == "" {
+		err := os.Setenv("DATABASE_BATCH_TIME_LIMIT", "100")
 		if err != nil {
 			return err
 		}
@@ -85,31 +97,20 @@ func SetDefaultEnvVars() error {
 func main() {
 	// port haro bayad az enviorment variable gereft baraye dockeri kardan
 	// ham chenin host name ha
-	fmt.Println("Hello! v2.0.0")
+	fmt.Println("Hello! v2.1.1")
 
 	// running prometheus server
-	prometheus.MustRegister(grpc_handler.PublishMethodCounter)
-	prometheus.MustRegister(grpc_handler.SubscribeMethodCounter)
-	prometheus.MustRegister(grpc_handler.FetchMethodCounter)
-	prometheus.MustRegister(grpc_handler.PublishMethodDuration)
-	prometheus.MustRegister(grpc_handler.SubscribeMethodDuration)
-	prometheus.MustRegister(grpc_handler.FetchMethodDuration)
-	prometheus.MustRegister(grpc_handler.TotalActiveSubscribers)
-	go RunPromtheusServer("8000")
+	go RunPrometheusServer("8000")
 
 	//create the database and module and running the broker grpc server
 
-	// ENV VARs :
-	// 	BROKER_DATABASE
-	// 	NODE_ID
-	// 	MESSAGE_ID_GENERATOR
-	// 	BROKER_DATABASE_HOST
-
 	var (
-		inodeID     int
-		idGenerator database.MessageIDGenerator
-		err         error
-		db          database.MessageRepository
+		inodeID        int
+		batchSize      int
+		batchTimeLimit int
+		idGenerator    database.MessageIDGenerator
+		err            error
+		db             database.MessageRepository
 	)
 
 	// set default ENV VARs :
@@ -118,14 +119,23 @@ func main() {
 		log.Fatal("error while setting default value for env variables")
 	}
 
-	switch os.Getenv("NODE_ID") {
-	default:
-		inodeID, err = strconv.Atoi(os.Getenv("NODE_ID"))
-		if err != nil {
-			log.Fatal("node id should be integer")
-		}
-		log.Println("node id set to:", os.Getenv("NODE_ID"))
+	inodeID, err = strconv.Atoi(os.Getenv("NODE_ID"))
+	if err != nil {
+		log.Fatal("node id should be integer")
 	}
+	log.Println("node id set to:", os.Getenv("NODE_ID"))
+
+	batchSize, err = strconv.Atoi(os.Getenv("DATABASE_BATCH_SIZE"))
+	if err != nil {
+		log.Fatal("batch size should be integer")
+	}
+	log.Println("batch size set to:", os.Getenv("DATABASE_BATCH_SIZE"))
+
+	batchTimeLimit, err = strconv.Atoi(os.Getenv("DATABASE_BATCH_TIME_LIMIT"))
+	if err != nil {
+		log.Fatal("batch time limit should be integer")
+	}
+	log.Println("batch time limit set to:", os.Getenv("DATABASE_BATCH_TIME_LIMIT"), "miliseconds")
 
 	// create message id generator
 	err = nil
@@ -153,16 +163,16 @@ func main() {
 		db, err = database.NewCassandraDB(
 			[]string{fmt.Sprintf("%s:9042", os.Getenv("BROKER_DATABASE_HOST"))},
 			idGenerator,
-			10000,
-			time.Millisecond*100,
+			batchSize,
+			time.Millisecond*time.Duration(batchTimeLimit),
 		)
 
 	case "postgres":
 		db, err = database.NewPostgresDB(
 			fmt.Sprintf("postgres://admin:admin@%s:5432/broker?sslmode=disable", os.Getenv("BROKER_DATABASE_HOST")),
 			0,
-			10000,
-			time.Millisecond*100,
+			batchSize,
+			time.Millisecond*time.Duration(batchTimeLimit),
 		)
 
 	case "inMemory":

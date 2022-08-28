@@ -3,6 +3,7 @@ package grpc_handler
 import (
 	"context"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"log"
 	"therealbroker/api/proto/src"
 	"therealbroker/pkg/broker"
@@ -10,44 +11,30 @@ import (
 )
 
 // define metrics
-var PublishMethodCounter = prometheus.NewCounter(
-	prometheus.CounterOpts{
-		Name: "broker_publish_method_counter",
-		Help: "number of publish method calls",
-	})
-var SubscribeMethodCounter = prometheus.NewCounter(
-	prometheus.CounterOpts{
-		Name: "broker_subscribe_method_counter",
-		Help: "number of subscribe method calls",
-	})
-var FetchMethodCounter = prometheus.NewCounter(
-	prometheus.CounterOpts{
-		Name: "broker_fetch_method_counter",
-		Help: "number of fetch method calls",
-	})
-var PublishMethodDuration = prometheus.NewSummary(
-	prometheus.SummaryOpts{
-		Name: "broker_publish_method_duration",
-		Help: "the duration of executing public method",
-		//Objectives: map[float64]float64{99: 0.05, 95: 0.05, 50: 0.05},
-	})
-var SubscribeMethodDuration = prometheus.NewSummary(
-	prometheus.SummaryOpts{
-		Name: "broker_subscribe_method_duration",
-		Help: "the duration of executing subscribe method",
-		//Objectives: map[float64]float64{99: 0.05, 95: 0.05, 50: 0.05},
-	})
-var FetchMethodDuration = prometheus.NewSummary(
-	prometheus.SummaryOpts{
-		Name: "broker_fetch_method_duration",
-		Help: "the duration of executing fetch method",
-		//Objectives: map[float64]float64{99: 0.05, 95: 0.05, 50: 0.05},
-	})
-var TotalActiveSubscribers = prometheus.NewGauge(
-	prometheus.GaugeOpts{
+var (
+	ActiveSubscribers = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "broker_active_subscribers",
-		Help: "number of total active subscribers",
+		Help: "number of active subscribers in broker",
 	})
+	MethodCalls = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "broker_method_count",
+		Help: "number of method calls in broker",
+	}, []string{"method"})
+
+	MethodError = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "broker_method_error_count",
+		Help: "counter error of each method",
+	}, []string{"method"})
+	MethodDuration = promauto.NewSummaryVec(prometheus.SummaryOpts{
+		Name: "broker_method_duration",
+		Help: "calculating the latency of grpc calls",
+		Objectives: map[float64]float64{
+			0.5:  0.05,
+			0.9:  0.01,
+			0.99: 0.001,
+		},
+	}, []string{"method"})
+)
 
 type BrokerGrpcServer struct {
 	M broker.Broker
@@ -55,14 +42,15 @@ type BrokerGrpcServer struct {
 }
 
 func (s *BrokerGrpcServer) Publish(ctx context.Context, request *proto.PublishRequest) (*proto.PublishResponse, error) {
-	timer := prometheus.NewTimer(PublishMethodDuration)
+	timer := prometheus.NewTimer(MethodDuration.WithLabelValues("Publish"))
 	defer timer.ObserveDuration()
-	defer PublishMethodCounter.Inc()
+	defer MethodCalls.WithLabelValues("Publish").Inc()
 
 	msg := broker.Message{Body: string(request.Body), Expiration: time.Second * time.Duration(request.ExpirationSeconds)}
 	id, err := s.M.Publish(ctx, request.Subject, msg)
 	if err != nil {
 		log.Println("couldn't publish the message : ", err)
+		MethodError.WithLabelValues("Publish").Inc()
 		return nil, err
 	}
 
@@ -70,16 +58,17 @@ func (s *BrokerGrpcServer) Publish(ctx context.Context, request *proto.PublishRe
 }
 
 func (s *BrokerGrpcServer) Subscribe(request *proto.SubscribeRequest, stream proto.Broker_SubscribeServer) error {
-	SubscribeMethodCounter.Inc()
-	timer := prometheus.NewTimer(SubscribeMethodDuration)
+	defer MethodCalls.WithLabelValues("Subscribe").Inc()
+	timer := prometheus.NewTimer(MethodDuration.WithLabelValues("Subscribe"))
 
 	channel, err := s.M.Subscribe(context.Background(), request.Subject)
 	if err != nil {
 		log.Println("couldn't subscribe to the subject : ", err)
+		MethodError.WithLabelValues("Subscribe").Inc()
 		return err
 	}
 
-	TotalActiveSubscribers.Inc()
+	ActiveSubscribers.Inc()
 	timer.ObserveDuration()
 
 	for {
@@ -95,13 +84,14 @@ func (s *BrokerGrpcServer) Subscribe(request *proto.SubscribeRequest, stream pro
 }
 
 func (s *BrokerGrpcServer) Fetch(ctx context.Context, request *proto.FetchRequest) (*proto.MessageResponse, error) {
-	FetchMethodCounter.Inc()
-	timer := prometheus.NewTimer(FetchMethodDuration)
+	defer MethodCalls.WithLabelValues("Fetch").Inc()
+	timer := prometheus.NewTimer(MethodDuration.WithLabelValues("Fetch"))
 	defer timer.ObserveDuration()
 
 	msg, err := s.M.Fetch(ctx, request.Subject, request.Id)
 	if err != nil {
 		log.Println("couldn't fetch the message : ", err)
+		MethodError.WithLabelValues("Fetch").Inc()
 		return nil, err
 	}
 	return &proto.MessageResponse{Body: []byte(msg.Body)}, nil

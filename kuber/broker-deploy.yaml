@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broker-deploy
+  
+spec:
+  selector:
+    matchLabels:
+      app: broker
+
+  replicas: 1
+
+  template:
+    metadata:
+      name: broker-pod
+      labels:
+        app: broker
+    spec:
+      containers:
+        - name: broker
+          image: dockerproxy.bale.ai/harispy/broker:2.1.0
+          ports:
+            - containerPort: 8000
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: 8000m # 2666m
+              memory: 2Gi # 0.5Gi
+            requests:
+              cpu: 2000m # 666m
+              memory: 2Gi # 0.25Gi
+          env:
+            - name: BROKER_DATABASE
+              value: cassandra
+            - name: BROKER_DATABASE_HOST
+              value: cassandra-svc
+            - name: NODE_ID
+              value: "1"
+            - name: MESSAGE_ID_GENERATOR
+              value: redis
+            - name: REDIS_ID_GENERATOR_HOST
+              value: redis-svc

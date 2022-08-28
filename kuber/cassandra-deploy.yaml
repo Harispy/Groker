@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cassandra-deploy
+  
+spec:
+  selector:
+    matchLabels:
+      app: cassandra
+
+  replicas: 1
+
+  template:
+    metadata:
+      name: cassandra-pod
+      labels:
+        app: cassandra
+    spec:
+      containers:
+        - name: cassandra
+          image: dockerproxy.bale.ai/cassandra:4.0
+          ports:
+            - containerPort: 9042
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 8Gi
+            requests:
+              cpu: 1000m
+              memory: 4Gi

@@ -11,7 +11,7 @@ import (
 )
 
 func Publish(client proto.BrokerClient, message string, subject string) {
-	_, err := client.Publish(context.Background(), &proto.PublishRequest{
+	res, err := client.Publish(context.Background(), &proto.PublishRequest{
 		Subject:           subject,
 		Body:              []byte(message),
 		ExpirationSeconds: 2000,
@@ -19,6 +19,9 @@ func Publish(client proto.BrokerClient, message string, subject string) {
 	if err != nil {
 		log.Println("Error publishing message: ", err)
 		return
+	}
+	if res.Id%1 == 0 {
+		log.Println(res.Id)
 	}
 }
 
@@ -34,7 +37,7 @@ func Subscribe(client proto.BrokerClient, subject string) {
 
 func main() {
 
-	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure())
+	conn, err := grpc.Dial("localhost:8080", grpc.WithInsecure()) //  192.168.70.191:30008
 	if err != nil {
 		log.Println("Error connecting to broker: ", err)
 		return

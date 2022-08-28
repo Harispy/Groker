@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deploy
+
+spec:
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      name: grafana-pod
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:9.1.0
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - mountPath: /etc/grafana/provisioning/datasources/datasource.yml
+              name: graf-config-file
+              subPath: datasource.yml
+          resources:
+            limits:
+              cpu: 500m
+              memory: 0.5Gi
+            requests:
+              cpu: 250m
+              memory: 0.25Gi
+      volumes:
+        - name: graf-config-file
+          configMap:
+            name: prom-graf-config

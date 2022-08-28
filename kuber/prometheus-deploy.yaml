@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-deploy
+
+spec:
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      name: prometheus-pod
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.38.0
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - mountPath: /etc/prometheus/prometheus.yml
+              name: prom-config-file
+              subPath: prometheus.yml
+          resources:
+            limits:
+              cpu: 500m
+              memory: 0.5Gi
+            requests:
+              cpu: 250m
+              memory: 0.25Gi
+      volumes:
+        - name: prom-config-file
+          configMap:
+            name: prom-graf-config

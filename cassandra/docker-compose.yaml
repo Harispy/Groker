@@ -1,7 +1,0 @@
-version: "2"
-services:
-  cassandra:
-    image: cassandra
-    ports:
-      - 9042:9042 # remove this if you dont want to use db from host...
-    # environment:
