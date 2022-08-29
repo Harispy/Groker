@@ -95,6 +95,7 @@ func SetDefaultEnvVars() error {
 }
 
 func main() {
+	// defer profile.Start(profile.MemProfileAllocs, profile.ProfilePath(".")).Stop()
 	// port haro bayad az enviorment variable gereft baraye dockeri kardan
 	// ham chenin host name ha
 	fmt.Println("Hello! v2.1.1")

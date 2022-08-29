@@ -2,6 +2,7 @@ package broker
 
 import (
 	"context"
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"math/rand"
@@ -9,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"therealbroker/pkg/broker"
+	"therealbroker/pkg/database"
 	"time"
 )
 
@@ -20,7 +22,14 @@ var (
 
 func TestMain(m *testing.M) {
 	rand.Seed(time.Now().Unix())
-	service = NewModule()
+	idGenerator, _ := database.NewSnowFlakeIDGenerator(1)
+	db, _ := database.NewCassandraDB(
+		[]string{fmt.Sprintf("%s:9042", "localhost")},
+		idGenerator,
+		10000,
+		time.Millisecond*time.Duration(100),
+	)
+	service = NewModule(db)
 	m.Run()
 }
 
@@ -46,7 +55,7 @@ func TestFetchShouldFailOnClosed(t *testing.T) {
 	err := service.Close()
 	assert.Nil(t, err)
 
-	_, err = service.Fetch(mainCtx, "ali", rand.Intn(100))
+	_, err = service.Fetch(mainCtx, "ali", int64(rand.Intn(100)))
 	assert.Equal(t, broker.ErrUnavailable, err)
 }
 
@@ -270,7 +279,7 @@ func TestDataRace(t *testing.T) {
 
 			default:
 				id, err := service.Publish(mainCtx, "ali", createMessageWithExpire(duration))
-				ids <- id
+				ids <- int(id)
 				assert.Nil(t, err)
 			}
 		}
@@ -302,7 +311,7 @@ func TestDataRace(t *testing.T) {
 				return
 
 			case id := <-ids:
-				_, err := service.Fetch(mainCtx, "ali", id)
+				_, err := service.Fetch(mainCtx, "ali", int64(id))
 				assert.Nil(t, err)
 			}
 		}
