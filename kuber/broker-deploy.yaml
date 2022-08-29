@@ -31,9 +31,9 @@ spec:
               memory: 2Gi # 0.25Gi
           env:
             - name: BROKER_DATABASE
-              value: cassandra
+              value: postgres
             - name: BROKER_DATABASE_HOST
-              value: cassandra-svc
+              value: postgres-svc
             - name: NODE_ID
               value: "1"
             - name: MESSAGE_ID_GENERATOR

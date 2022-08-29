@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
@@ -18,39 +19,51 @@ type postgres struct {
 	batchCounter  int
 	batchLock     sync.Mutex
 	batchInserted chan<- bool
+	channels      []chan<- error
 }
 
 func NewPostgresDB(connStr string, maxConn int32, batchSize int, batchInsertTimeLimit time.Duration) (*postgres, error) {
 	// errors can be more specific (masalan baraye har err ye err jadid sakht ke moshkel + err ro bargardone....)
+	var (
+		pool *pgxpool.Pool
+		err  error
+	)
 	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while parsing config : %w", err)
 	}
 	if maxConn != 0 {
 		config.MaxConns = maxConn
 	}
-	pool, err := pgxpool.ConnectConfig(context.Background(), config)
+	for i := 1; i < 20; i++ {
+		pool, err = pgxpool.ConnectConfig(context.Background(), config)
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second * time.Duration(i))
+	}
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while connecting to postgres : %w", err)
 	}
 
 	pg := postgres{
 		pool:         pool,
 		batchArray:   make([][]interface{}, batchSize),
 		batchCounter: batchSize,
+		channels:     make([]chan<- error, 0, batchSize),
 	}
 
 	err = pg.CreateMessageTableIfNotExists()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while creating table : %w", err)
 	}
 	pg.idCounter, err = pg.GetMaxIdFromDB()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while getting max id from db : %w", err)
 	}
 	ch, err := pg.CreateBatchInsertSchedule(batchInsertTimeLimit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error while creating batch insert schedule : %w", err)
 	}
 	pg.batchInserted = ch
 	return &pg, nil
@@ -71,23 +84,13 @@ func (pg *postgres) GetMessageBySubjectAndID(subject string, id int64) (*broker.
 }
 
 func (pg *postgres) InsertMessage(subject string, message *broker.Message) (int64, error) {
-	id := atomic.AddInt64(&pg.idCounter, 1)
-	row := []interface{}{id, subject, message.Body, message.ExpirationTime}
-	pg.batchLock.Lock()
-	defer pg.batchLock.Unlock()
-	pg.batchCounter -= 1
-	pg.batchArray[pg.batchCounter] = row
-	if pg.batchCounter == 0 {
-		if _, err := pg.BatchInsertMessage(); err != nil {
-			log.Println("couldn't do batch inserting : ", err)
-			// adding the error for not inserting all the data
-			return 0, err
-		}
-		pg.batchCounter = len(pg.batchArray)
-		pg.batchInserted <- true
-	}
+	message.ID = atomic.AddInt64(&pg.idCounter, 1)
 
-	return id, nil
+	channel, err := pg.AddToBatch(subject, message)
+	if err != nil {
+		return 0, fmt.Errorf("error while adding to batch : %w", err)
+	}
+	return message.ID, <-channel
 }
 
 func (pg *postgres) SingleInsertMessage(subject string, message *broker.Message) (int64, error) {
@@ -101,19 +104,43 @@ func (pg *postgres) SingleInsertMessage(subject string, message *broker.Message)
 	return id, nil
 }
 
+func (pg *postgres) AddToBatch(subject string, message *broker.Message) (<-chan error, error) {
+	row := []interface{}{message.ID, subject, message.Body, message.ExpirationTime}
+	pg.batchLock.Lock()
+	defer pg.batchLock.Unlock()
+
+	pg.batchCounter -= 1
+	pg.batchArray[pg.batchCounter] = row
+	channel := make(chan error, 1)
+	pg.channels = append(pg.channels, channel)
+	if pg.batchCounter == 0 {
+		pg.BatchInsertMessage()
+		pg.batchInserted <- true
+	}
+	return channel, nil
+}
+
 func (pg *postgres) BatchInsertMessage() (int64, error) {
 	copyCount, err := pg.pool.CopyFrom(
 		context.Background(),
 		pgx.Identifier{"messages"},
 		[]string{"id", "subject", "body", "expiration_time"},
 		pgx.CopyFromRows(pg.batchArray[pg.batchCounter:]))
+	pg.batchCounter = len(pg.batchArray)
+	for _, channel := range pg.channels {
+		channel <- err
+	}
+	pg.channels = make([]chan<- error, 0, len(pg.batchArray))
+	if err != nil {
+		log.Println("couldn't do batch inserting : ", err)
+	}
 	return copyCount, err
 }
 
 func (pg *postgres) CreateMessageTableIfNotExists() error {
 	_, err := pg.pool.Exec(context.Background(),
 		`create table if not exists public.messages(
-		id serial,
+		id bigserial,
     	subject text,
     	body text,
     	expiration_time timestamp,
@@ -128,7 +155,7 @@ func (pg *postgres) CreateMessageTableIfNotExists() error {
 func (pg *postgres) GetMaxIdFromDB() (int64, error) {
 	var maxId int64
 	row := pg.pool.QueryRow(context.Background(),
-		"select (max(id), 0) from messages")
+		"select COALESCE(max(id), 0) from messages")
 	if err := row.Scan(&maxId); err != nil {
 		return 0, err
 	}
@@ -152,10 +179,7 @@ func (pg *postgres) BatchInsertSchedule(inserted <-chan bool, timePeriod time.Du
 				pg.batchLock.Unlock()
 				break
 			}
-			if _, err := pg.BatchInsertMessage(); err != nil {
-				log.Println("couldn't do batch inserting : ", err)
-			}
-			pg.batchCounter = len(pg.batchArray)
+			pg.BatchInsertMessage()
 			pg.batchLock.Unlock()
 		}
 	}

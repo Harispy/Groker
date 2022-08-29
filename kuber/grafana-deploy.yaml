@@ -24,7 +24,7 @@ spec:
               subPath: datasource.yml
           resources:
             limits:
-              cpu: 500m
+              cpu: 100m
               memory: 0.5Gi
             requests:
               cpu: 250m

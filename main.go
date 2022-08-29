@@ -56,7 +56,7 @@ func SetDefaultEnvVars() error {
 		}
 	}
 	if os.Getenv("BROKER_DATABASE") == "" {
-		err := os.Setenv("BROKER_DATABASE", "cassandra")
+		err := os.Setenv("BROKER_DATABASE", "postgres")
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func main() {
 	// defer profile.Start(profile.MemProfileAllocs, profile.ProfilePath(".")).Stop()
 	// port haro bayad az enviorment variable gereft baraye dockeri kardan
 	// ham chenin host name ha
-	fmt.Println("Hello! v2.1.1")
+	fmt.Println("Hello! v2.3.0")
 
 	// running prometheus server
 	go RunPrometheusServer("8000")
@@ -170,7 +170,7 @@ func main() {
 
 	case "postgres":
 		db, err = database.NewPostgresDB(
-			fmt.Sprintf("postgres://admin:admin@%s:5432/broker?sslmode=disable", os.Getenv("BROKER_DATABASE_HOST")),
+			fmt.Sprintf("postgres://admin:admin@%s:5432/admin?sslmode=disable", os.Getenv("BROKER_DATABASE_HOST")),
 			0,
 			batchSize,
 			time.Millisecond*time.Duration(batchTimeLimit),

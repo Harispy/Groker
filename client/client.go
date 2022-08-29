@@ -11,7 +11,7 @@ import (
 )
 
 func Publish(client proto.BrokerClient, message string, subject string) {
-	res, err := client.Publish(context.Background(), &proto.PublishRequest{
+	_, err := client.Publish(context.Background(), &proto.PublishRequest{
 		Subject:           subject,
 		Body:              []byte(message),
 		ExpirationSeconds: 2000,
@@ -20,9 +20,9 @@ func Publish(client proto.BrokerClient, message string, subject string) {
 		log.Println("Error publishing message: ", err)
 		return
 	}
-	if res.Id%1 == 0 {
-		log.Println(res.Id)
-	}
+	//if res.Id%1 == 0 {
+	//	log.Println(res.Id)
+	//}
 }
 
 func Subscribe(client proto.BrokerClient, subject string) {
