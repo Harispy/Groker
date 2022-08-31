@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-no-persistency
+data:
+  redis-config: |
+    save ""
+    maxmemory-policy allkeys-lru

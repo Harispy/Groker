@@ -98,7 +98,7 @@ func main() {
 	// defer profile.Start(profile.MemProfileAllocs, profile.ProfilePath(".")).Stop()
 	// port haro bayad az enviorment variable gereft baraye dockeri kardan
 	// ham chenin host name ha
-	fmt.Println("Hello! v2.3.0")
+	fmt.Println("Hello! v2.4.1")
 
 	// running prometheus server
 	go RunPrometheusServer("8000")
@@ -171,6 +171,7 @@ func main() {
 	case "postgres":
 		db, err = database.NewPostgresDB(
 			fmt.Sprintf("postgres://admin:admin@%s:5432/admin?sslmode=disable", os.Getenv("BROKER_DATABASE_HOST")),
+			idGenerator,
 			0,
 			batchSize,
 			time.Millisecond*time.Duration(batchTimeLimit),

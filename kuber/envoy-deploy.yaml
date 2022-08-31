@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: envoy-deploy
+  
+spec:
+  selector:
+    matchLabels:
+      app: envoy
+
+  replicas: 1
+
+  template:
+    metadata:
+      name: envoy-pod
+      labels:
+        app: envoy
+    spec:
+      containers:
+        - name: envoy
+          image: dockerproxy.bale.ai/envoyproxy/envoy:v1.23.1
+          ports:
+            - containerPort: 10000
+            - containerPort: 10000
+          resources:
+            limits:
+              cpu: 3500m # 2666m
+              memory: 8Gi # 0.5Gi
+            requests:
+              cpu: 3500m # 666m
+              memory: 8Gi # 0.25Gi
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy
+              readOnly: true
+      volumes:
+        - name: envoy-config
+          configMap:
+            name: envoy-configmap

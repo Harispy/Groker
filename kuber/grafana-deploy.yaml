@@ -27,7 +27,7 @@ spec:
               cpu: 100m
               memory: 0.5Gi
             requests:
-              cpu: 250m
+              cpu: 100m
               memory: 0.25Gi
       volumes:
         - name: graf-config-file

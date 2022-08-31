@@ -14,11 +14,11 @@ data:
       
       - job_name: broker
         static_configs:
-          - targets: ["10.233.96.226:8000"]
+          - targets: ["broker-metric-svc:8000"]
 
   datasource.yml: |-
     apiVersion: 1
     datasources:
     - name: Prometheus
       type: prometheus
-      url: http://10.233.58.215:9090
+      url: http://prometheus-svc:9090

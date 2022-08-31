@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broker-deploy
+  
+spec:
+  selector:
+    matchLabels:
+      app: broker
+
+  replicas: 1
+
+  template:
+    metadata:
+      name: client-pod
+      labels:
+        app: client
+    spec:
+      containers:
+        - name: client
+          image: dockerproxy.bale.ai/harispy/broker-client
+          resources:
+            limits:
+              cpu: 2500m # 2666m
+              memory: 2Gi # 0.5Gi
+            requests:
+              cpu: 2500m # 666m
+              memory: 2Gi # 0.25Gi

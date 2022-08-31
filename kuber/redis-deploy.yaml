@@ -23,5 +23,24 @@ spec:
             - containerPort: 6379
           resources:
             limits:
-              cpu: 300m
+              cpu: 1300m
               memory: 1Gi
+            requests:
+              cpu: 1300m
+              memory: 1Gi
+          command:
+            - redis-server
+            - "/redis-master/redis.conf"
+          env:
+            - name: MASTER
+              value: "true"
+          volumeMounts:
+              - mountPath: /redis-master
+                name: redis-config
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-no-persistency
+            items:
+              - key: redis-config
+                path: redis.conf

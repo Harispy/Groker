@@ -7,22 +7,21 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 	"log"
 	"sync"
-	"sync/atomic"
 	"therealbroker/pkg/broker"
 	"time"
 )
 
 type postgres struct {
 	pool          *pgxpool.Pool // can be replaced with a pool
-	idCounter     int64
 	batchArray    [][]interface{}
 	batchCounter  int
 	batchLock     sync.Mutex
 	batchInserted chan<- bool
 	channels      []chan<- error
+	idGenerator   MessageIDGenerator
 }
 
-func NewPostgresDB(connStr string, maxConn int32, batchSize int, batchInsertTimeLimit time.Duration) (*postgres, error) {
+func NewPostgresDB(connStr string, idGenerator MessageIDGenerator, maxConn int32, batchSize int, batchInsertTimeLimit time.Duration) (*postgres, error) {
 	// errors can be more specific (masalan baraye har err ye err jadid sakht ke moshkel + err ro bargardone....)
 	var (
 		pool *pgxpool.Pool
@@ -51,15 +50,12 @@ func NewPostgresDB(connStr string, maxConn int32, batchSize int, batchInsertTime
 		batchArray:   make([][]interface{}, batchSize),
 		batchCounter: batchSize,
 		channels:     make([]chan<- error, 0, batchSize),
+		idGenerator:  idGenerator,
 	}
 
 	err = pg.CreateMessageTableIfNotExists()
 	if err != nil {
 		return nil, fmt.Errorf("error while creating table : %w", err)
-	}
-	pg.idCounter, err = pg.GetMaxIdFromDB()
-	if err != nil {
-		return nil, fmt.Errorf("error while getting max id from db : %w", err)
 	}
 	ch, err := pg.CreateBatchInsertSchedule(batchInsertTimeLimit)
 	if err != nil {
@@ -84,7 +80,11 @@ func (pg *postgres) GetMessageBySubjectAndID(subject string, id int64) (*broker.
 }
 
 func (pg *postgres) InsertMessage(subject string, message *broker.Message) (int64, error) {
-	message.ID = atomic.AddInt64(&pg.idCounter, 1)
+	var err error
+	message.ID, err = pg.idGenerator.Generate()
+	if err != nil {
+		return 0, fmt.Errorf("error while creating id : %w", err)
+	}
 
 	channel, err := pg.AddToBatch(subject, message)
 	if err != nil {
@@ -94,8 +94,12 @@ func (pg *postgres) InsertMessage(subject string, message *broker.Message) (int6
 }
 
 func (pg *postgres) SingleInsertMessage(subject string, message *broker.Message) (int64, error) {
-	id := atomic.AddInt64(&pg.idCounter, 1)
-	_, err := pg.pool.Exec(context.Background(),
+	id, err := pg.idGenerator.Generate()
+	if err != nil {
+		return 0, fmt.Errorf("error while creating id : %w", err)
+	}
+
+	_, err = pg.pool.Exec(context.Background(),
 		"INSERT INTO messages (id, subject, body, expiration_time) VALUES ($1, $2, $3, $4)",
 		id, subject, message.Body, message.ExpirationTime)
 	if err != nil {
